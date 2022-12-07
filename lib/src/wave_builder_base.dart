@@ -30,6 +30,17 @@ class WaveBuilder {
   int _bitRate = 16;
   int _frequency = 44100;
   int _numChannels = 2;
+  int get bitRate {
+    return _bitRate;
+  }
+
+  int get frequency {
+    return _frequency;
+  }
+
+  int get numChannels {
+    return _numChannels;
+  }
 
   /// Construct a wave builder.
   /// Supply audio file properties.
@@ -95,10 +106,12 @@ class WaveBuilder {
   /// If [findDataChunk] is true, searches first to find the file's data chunk.
   /// It's recommended to call getDataChunk on the file contents you want to append first,
   /// to prevent repeating everytime you add the same file.
-  void appendFileContents(List<int> fileContents, {bool findDataChunk = true}) {
+  List<int> appendFileContents(List<int> fileContents,
+      {bool findDataChunk = true}) {
     var dataChunk = findDataChunk ? getDataChunk(fileContents) : fileContents;
     _lastSampleSize = dataChunk.length;
     _outputBytes.addAll(dataChunk);
+    return dataChunk;
   }
 
   /// Append [msLength] milliseconds of silence to our wave file.
