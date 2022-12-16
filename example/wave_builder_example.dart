@@ -19,13 +19,13 @@ Future<void> main() async {
 
   var waveBuilder = WaveBuilder();
 
-  waveBuilder.appendFileContents(primaryBytes);
-  waveBuilder.appendSilence(1000, silenceType);
-  waveBuilder.appendFileContents(secondaryBytes);
-  waveBuilder.appendSilence(1000, silenceType);
-  waveBuilder.appendFileContents(secondaryBytes);
-  waveBuilder.appendSilence(1000, silenceType);
-  waveBuilder.appendFileContents(secondaryBytes);
-  waveBuilder.appendSilence(1000, silenceType);
+  // waveBuilder.appendFileContents(primaryBytes);
+  // waveBuilder.appendSilence(1000, silenceType);
+  // waveBuilder.appendFileContents(secondaryBytes);
+  // waveBuilder.appendSilence(1000, silenceType);
+  // waveBuilder.appendFileContents(secondaryBytes);
+  // waveBuilder.appendSilence(1000, silenceType);
+  // waveBuilder.appendFileContents(secondaryBytes);
+  // waveBuilder.appendSilence(1000, silenceType);
   await fileOut.writeAsBytes(waveBuilder.fileBytes);
 }

@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:wave_builder/src/lib/byte_utils.dart';
 
@@ -14,7 +16,7 @@ class WaveBuilder {
   static const int AUDIO_FORMAT = 1;
   static const int BYTE_SIZE = 8;
 
-  int _lastSampleSize = 0;
+  //int _lastSampleSize = 0;
 
   /// Finalizes the header sizes and returns bytes
   List<int> get fileBytes {
@@ -30,6 +32,7 @@ class WaveBuilder {
   int _bitRate = 16;
   int _frequency = 44100;
   int _numChannels = 2;
+  Int16List _dataChunk = Int16List(0);
   int get bitRate {
     return _bitRate;
   }
@@ -42,23 +45,53 @@ class WaveBuilder {
     return _numChannels;
   }
 
-  /// Construct a wave builder.
-  /// Supply audio file properties.
-  WaveBuilder({int bitRate = 16, int frequency = 44100, bool stereo = true}) {
-    _outputBytes = <int>[];
-    _bitRate = bitRate;
-    _frequency = frequency;
-    _numChannels = stereo ? 2 : 1;
-    _initializeWave();
+  Int16List get data {
+    return _dataChunk;
   }
 
-  void _initializeWave() {
+  set data(Int16List newData) {
+    _dataChunk = newData;
+  }
+
+  int get sampleLength {
+    return _dataChunk.length ~/ _numChannels;
+  }
+
+  WaveBuilder({
+    int bitRate = 16,
+    int frequency = 44100,
+    int numChannels = 2,
+    ByteBuffer? fileBuffer,
+    int sampleLength = 0,
+  }) {
+    if (fileBuffer != null) {
+      List<int> fileContents =
+          fileBuffer.asUint8List(0, fileBuffer.lengthInBytes);
+      _numChannels = ByteUtils.byteListAsNumber(fileContents.sublist(22, 24));
+      _bitRate = ByteUtils.byteListAsNumber(fileContents.sublist(34, 36));
+      _frequency = ByteUtils.byteListAsNumber(fileContents.sublist(24, 28));
+      _dataChunk = _getDataChunk(fileContents);
+    } else {
+      _outputBytes = <int>[];
+      _bitRate = bitRate;
+      _frequency = frequency;
+      _numChannels = numChannels;
+      _dataChunk = Int16List(sampleLength * numChannels);
+    }
+  }
+
+  void _finalize() {
+    _outputBytes = [];
     _outputBytes.addAll(_utf8encoder.convert('RIFF'));
     _outputBytes.addAll(ByteUtils.numberAsByteList(0, 4, bigEndian: false));
     _outputBytes.addAll(_utf8encoder.convert('WAVE'));
 
     _createFormatChunk();
     _writeDataChunkHeader();
+    ByteBuffer byteBuffer = _dataChunk.buffer;
+    _outputBytes.addAll(byteBuffer.asUint8List());
+    _updateRiffChunkSize();
+    _updateDataChunkSize();
   }
 
   void _createFormatChunk() {
@@ -89,7 +122,7 @@ class WaveBuilder {
   }
 
   /// Find data chunk content after <data|size> in [fileContents]
-  List<int> getDataChunk(List<int> fileContents) {
+  Int16List _getDataChunk(List<int> fileContents) {
     final dataIdSequence = _utf8encoder.convert('data');
     final dataIdIndex =
         ByteUtils.findByteSequenceInList(dataIdSequence, fileContents);
@@ -99,38 +132,9 @@ class WaveBuilder {
       // Add 4 for data size
       dataStartIndex = dataIdIndex + dataIdSequence.length + 4;
     }
-    return fileContents.sublist(dataStartIndex);
-  }
-
-  /// Append [fileContents] read as bytes to our wave file.
-  /// If [findDataChunk] is true, searches first to find the file's data chunk.
-  /// It's recommended to call getDataChunk on the file contents you want to append first,
-  /// to prevent repeating everytime you add the same file.
-  List<int> appendFileContents(List<int> fileContents,
-      {bool findDataChunk = true}) {
-    var dataChunk = findDataChunk ? getDataChunk(fileContents) : fileContents;
-    _lastSampleSize = dataChunk.length;
-    _outputBytes.addAll(dataChunk);
-    return dataChunk;
-  }
-
-  /// Append [msLength] milliseconds of silence to our wave file.
-  /// [silenceType] determines whether we start the counter for silence
-  /// from the beginning of the last sample or the end.
-  void appendSilence(int msLength, WaveBuilderSilenceType silenceType) {
-    var byteRate = _frequency * _bitRate ~/ 8;
-    var length = (msLength * byteRate ~/ 1000) * _numChannels;
-    if (silenceType == WaveBuilderSilenceType.BeginningOfLastSample) {
-      if (length > _lastSampleSize) {
-        length -= _lastSampleSize;
-      } else {
-        _outputBytes.removeRange(_outputBytes.length - _lastSampleSize + length,
-            _outputBytes.length);
-        length = 0;
-      }
-    }
-
-    _outputBytes.addAll(List<int>.filled(length, 0));
+    Uint8List bytes = Uint8List.fromList(fileContents.sublist(dataStartIndex));
+    ByteBuffer byteBuffer = bytes.buffer;
+    return byteBuffer.asInt16List();
   }
 
   void _updateRiffChunkSize() {
@@ -151,8 +155,41 @@ class WaveBuilder {
             bigEndian: false));
   }
 
-  void _finalize() {
-    _updateRiffChunkSize();
-    _updateDataChunkSize();
+  int _roundInt16(int value) {
+    if (value > 32767) {
+      return 32767;
+    } else if (value < -32768) {
+      return -32768;
+    }
+    return value;
+  }
+
+  void mergeOtherWaveBuilder(
+      {required WaveBuilder waveBuilder,
+      int offsetSample = 0,
+      double volume = 1.0}) {
+    var currentBuffer = data;
+    for (var i = 0; i < min(waveBuilder.data.length, this.data.length); i++) {
+      if (i + offsetSample >= 0) {
+        if (waveBuilder._numChannels == 2) {
+          var value = currentBuffer[i + offsetSample] +
+              (waveBuilder.data[i] * volume).toInt();
+          currentBuffer[i + offsetSample] = _roundInt16(value);
+        } else if (this.numChannels == 2 && waveBuilder._numChannels == 1) {
+          var evenValue = currentBuffer[2 * (i + offsetSample)] +
+              (waveBuilder.data[i] * volume).toInt();
+          var oddValue = currentBuffer[2 * (i + offsetSample) + 1] +
+              (waveBuilder.data[i] * volume).toInt();
+          currentBuffer[2 * (i + offsetSample)] = _roundInt16(evenValue);
+          currentBuffer[2 * (i + offsetSample) + 1] = _roundInt16(oddValue);
+        } else if (this.numChannels == 1 && waveBuilder._numChannels == 2) {
+          var value = currentBuffer[i + offsetSample] +
+              (waveBuilder.data[2 * i] + waveBuilder.data[2 * i + 1]) *
+                  volume ~/
+                  2;
+          currentBuffer[i + offsetSample] = _roundInt16(value);
+        }
+      }
+    }
   }
 }

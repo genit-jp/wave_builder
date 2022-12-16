@@ -1,10 +1,23 @@
 class ByteUtils {
   static List<int> numberAsByteList(int input, numBytes, {bigEndian = true}) {
-    var output = <int>[], curByte = input;
+    var output = <int>[];
+    int curByte = input;
     for (var i = 0; i < numBytes; ++i) {
       output.insert(bigEndian ? 0 : output.length, curByte & 255);
       curByte >>= 8;
     }
+    return output;
+  }
+
+  static int byteListAsNumber(List<int> input, {bigEndian = true}) {
+    int output = input[0];
+
+    for (var i = 0; i < input.length; ++i) {
+      bigEndian
+          ? output |= input[i] << 8 * (i)
+          : output |= input[i] << 8 * (input.length - i);
+    }
+
     return output;
   }
 
