@@ -192,4 +192,18 @@ class WaveBuilder {
       }
     }
   }
+
+  void normalize() {
+    int dataMax = this.data[0];
+    for (var i = 0; i < this.data.length; i++) {
+      if (this.data[i].abs() > dataMax.abs()) {
+        dataMax = this.data[i];
+      }
+    }
+    int int16Max = 32767;
+    double magnification = int16Max / dataMax;
+    for (var i = 0; i < this.data.length; i++) {
+      this.data[i] = (this.data[i] * magnification).toInt();
+    }
+  }
 }
